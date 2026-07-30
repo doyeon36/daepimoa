@@ -481,47 +481,39 @@
     return null;
   }
 
-  var CORS_PROXIES = [
-    function(url) { return "https://api.allorigins.win/raw?url=" + encodeURIComponent(url); },
-    function(url) { return "https://corsproxy.io/?url=" + encodeURIComponent(url); },
-    function(url) { return "https://api.codetabs.com/v1/proxy/?quest=" + url; }
-  ];
+  function fetchGoogleNews(queryTerms, callback) {
+    var rssUrl = "https://news.google.com/rss/search?q=" +
+      encodeURIComponent(queryTerms) + "&hl=ko&gl=KR&ceid=KR:ko";
+    var apiUrl = "https://api.rss2json.com/v1/api.json?rss_url=" + encodeURIComponent(rssUrl);
 
-  function fetchWithProxies(url, index, onSuccess, onError) {
-    if (index >= CORS_PROXIES.length) { onError(); return; }
-    fetch(CORS_PROXIES[index](url))
-      .then(function(res) { return res.text(); })
-      .then(function(text) {
-        if (text && text.length > 50) {
-          onSuccess(text);
-        } else {
-          fetchWithProxies(url, index + 1, onSuccess, onError);
-        }
+    fetch(apiUrl)
+      .then(function(res) { return res.json(); })
+      .then(function(data) {
+        if (data.status !== "ok" || !data.items) { callback(null); return; }
+        callback(data.items);
       })
-      .catch(function() {
-        fetchWithProxies(url, index + 1, onSuccess, onError);
+      .catch(function(err) {
+        console.warn("rss2json 로드 실패:", err);
+        callback(null);
       });
   }
 
   function parseNewsRss(keywordList, callback) {
     var queryTerms = keywordList.map(function(k) { return k.keywords[0]; }).join(" OR ");
-    var rssUrl = "https://news.google.com/rss/search?q=" +
-      encodeURIComponent(queryTerms) + "&hl=ko&gl=KR&ceid=KR:ko";
 
-    fetchWithProxies(rssUrl, 0, function(xmlText) {
-        var parser = new DOMParser();
-        var xml = parser.parseFromString(xmlText, "text/xml");
-        var items = xml.querySelectorAll("item");
+    fetchGoogleNews(queryTerms, function(items) {
+        if (!items) { callback(null); return; }
+
         var results = {};
         var now = new Date();
         var isWeather = keywordList === WEATHER_KEYWORDS;
         var TIME_LIMIT = (isWeather ? 24 : 3) * 60 * 60 * 1000;
 
         for (var i = 0; i < items.length; i++) {
-          var title = items[i].querySelector("title") ? items[i].querySelector("title").textContent : "";
-          var link = items[i].querySelector("link") ? items[i].querySelector("link").textContent : "";
-          var pubDate = items[i].querySelector("pubDate") ? items[i].querySelector("pubDate").textContent : "";
-          var source = items[i].querySelector("source") ? items[i].querySelector("source").textContent : "뉴스";
+          var title = items[i].title || "";
+          var pubDate = items[i].pubDate || "";
+          var link = items[i].link || "";
+          var source = items[i].author || "뉴스";
           var cleanTitle = title.replace(/ - [^-]+$/, "");
 
           var newsDate = new Date(pubDate);
@@ -544,10 +536,6 @@
           }
         }
         callback(results);
-      },
-      function() {
-        console.warn("모든 CORS 프록시 실패");
-        callback(null);
       });
   }
 
@@ -755,48 +743,31 @@
     });
   }
 
-  // ===== 실시간 뉴스 (Google News RSS via CORS proxy) =====
+  // ===== 실시간 뉴스 (Google News RSS via rss2json) =====
 
   function loadNews() {
-    var rssUrl = "https://news.google.com/rss/search?q=" +
-      encodeURIComponent("재난 OR 재해 OR 대피 OR 지진 OR 태풍 OR 화재 OR 홍수 OR 폭우 OR 기상특보") +
-      "&hl=ko&gl=KR&ceid=KR:ko";
-
-    fetchWithProxies(rssUrl, 0, function(xmlText) {
-        var parser = new DOMParser();
-        var xml = parser.parseFromString(xmlText, "text/xml");
-        var items = xml.querySelectorAll("item");
-
-        if (items.length === 0) {
-          throw new Error("No items");
+    fetchGoogleNews("재난 OR 재해 OR 대피 OR 지진 OR 태풍 OR 화재 OR 홍수 OR 폭우 OR 기상특보", function(items) {
+        if (!items || items.length === 0) {
+          renderNewsFallback();
+          return;
         }
 
-        var newsItems = [];
-        for (var i = 0; i < Math.min(items.length, 12); i++) {
-          var item = items[i];
-          var title = item.querySelector("title") ? item.querySelector("title").textContent : "";
-          var link = item.querySelector("link") ? item.querySelector("link").textContent : "";
-          var pubDate = item.querySelector("pubDate") ? item.querySelector("pubDate").textContent : "";
-          var source = item.querySelector("source") ? item.querySelector("source").textContent : "뉴스";
-
-          newsItems.push({
+        var newsItems = items.slice(0, 12).map(function(item) {
+          var title = item.title || "";
+          return {
             title: title.replace(/ - [^-]+$/, ""),
-            link: link,
-            pubDate: pubDate,
-            dateObj: pubDate ? new Date(pubDate) : new Date(0),
-            source: source
-          });
-        }
+            link: item.link || "",
+            pubDate: item.pubDate || "",
+            dateObj: item.pubDate ? new Date(item.pubDate) : new Date(0),
+            source: item.author || "뉴스"
+          };
+        });
 
         newsItems.sort(function (a, b) {
           return b.dateObj - a.dateObj;
         });
 
         renderNews(newsItems);
-      },
-      function() {
-        console.warn("뉴스 로드 실패: 모든 CORS 프록시 실패");
-        renderNewsFallback();
       });
   }
 
