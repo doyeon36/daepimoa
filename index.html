@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>대피모아 - 실시간 대피 장소 안내</title>
+  <meta name="description" content="재해 발생 시 실시간으로 가장 가까운 대피 장소, 현 상황, 뉴스를 안내합니다." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚨</text></svg>" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+  <!-- 로딩 화면 -->
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="spinner"></div>
+    <p>대피모아</p>
+    <p class="sub">현재 위치를 확인하는 중...</p>
+  </div>
+
+  <!-- 헤더 -->
+  <header>
+    <div class="logo">
+      <span class="logo-icon">🚨</span>
+      <span>대피모아</span>
+    </div>
+    <span class="header-subtitle">실시간 대피 장소 안내</span>
+  </header>
+
+  <!-- 섹션 메뉴바 -->
+  <nav class="section-nav" id="sectionNav">
+    <a href="#shelterSection" class="nav-link active">🏘️ 대피소</a>
+    <a href="#situationSection" class="nav-link">📊 현상황</a>
+    <a href="#newsSection" class="nav-link">📰 뉴스</a>
+    <a href="#guideSection" class="nav-link">🛡️ 대처법</a>
+  </nav>
+
+  <!-- 긴급 연락처 바 -->
+  <nav class="emergency-bar" id="emergencyBar">
+    <button class="emergency-toggle" id="emergencyToggle" type="button">
+      <span class="et-icon">🚨</span>
+      <span>긴급 연락처</span>
+      <span class="et-arrow">▼</span>
+    </button>
+    <div class="emergency-content" id="emergencyContent"></div>
+  </nav>
+
+  <!-- 위치 공유 모달 -->
+  <div class="location-share-modal" id="locationModal">
+    <div class="modal-content">
+      <h3>📍 내 현재 위치 정보</h3>
+      <div class="location-info" id="locationInfo">
+        <p><span class="label">위도/경도:</span> <span id="modalCoords">확인 중...</span></p>
+        <p><span class="label">도로명 주소:</span> <span id="modalAddress">확인 중...</span></p>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-copy" id="btnCopyLocation">📋 위치 복사</button>
+        <button class="btn-share-kakao" id="btnShareKakao">💬 공유하기</button>
+        <button class="btn-close-modal" id="btnCloseModal">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 위치 배너 -->
+  <div class="location-banner" id="locationBanner">
+    <span class="pin" id="locationPin">📍</span>
+    <div class="text">
+      <strong id="userAddress">위치 공유를 시작하면 가까운 대피소와 현 상황을 확인할 수 있습니다.</strong>
+      <small id="userCoords"></small>
+    </div>
+    <button class="location-toggle-btn" id="locationToggleBtn" type="button">📍 내 위치 찾기</button>
+  </div>
+
+  <!-- 메인 콘텐츠 -->
+  <main>
+
+    <!-- ===== MVP 1: 실시간 가장 가까운 대피 장소 ===== -->
+    <section id="shelterSection">
+      <div class="section-header">
+        <span class="icon">🏘️</span>
+        <h2>가장 가까운 대피 장소</h2>
+        <span class="badge-live">LIVE</span>
+      </div>
+
+      <div class="shelter-info">
+        <!-- 가장 가까운 대피소 정보 -->
+        <div class="nearest-shelter" id="nearestShelter">
+          <div class="ns-header">
+            <span class="ns-type" id="nsType">대피소</span>
+          </div>
+          <h3 id="nsName">확인 중...</h3>
+          <div class="ns-distance" id="nsDistance">— <small>km</small></div>
+          <div class="ns-detail" id="nsDetail"></div>
+          <div class="ns-actions">
+            <a href="#" class="btn-direction" id="btnDirection" target="_blank" rel="noopener">🗺️ 길 찾기</a>
+            <button class="btn-detail" id="btnToggleList">📋 목록 보기</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 지도 -->
+      <div id="map"></div>
+
+      <!-- 주변 대피소 목록 -->
+      <div class="shelter-list-container" id="shelterListContainer" style="display: none;">
+        <h4>📍 주변 대피소 (반경 5km 이내)</h4>
+        <div class="shelter-list" id="shelterList"></div>
+      </div>
+    </section>
+
+    <!-- ===== MVP 2: 실시간 현 상황 ===== -->
+    <section id="situationSection">
+      <div class="section-header">
+        <span class="icon">📊</span>
+        <h2>실시간 현 상황</h2>
+        <span class="badge-live">LIVE</span>
+      </div>
+      <div class="situation-tabs">
+        <button class="situation-tab active" data-tab="disaster" type="button">🌐 재난특보</button>
+        <button class="situation-tab" data-tab="accident" type="button">🚨 사고특보</button>
+      </div>
+      <div class="situation-search">
+        <input type="text" id="regionSearchInput" class="region-search-input" placeholder="🔍 지역 검색 (예: 광주, 부산, 경기도)" autocomplete="off" />
+      </div>
+      <div class="situation-list" id="situationList"></div>
+    </section>
+
+    <!-- ===== MVP 3: 실시간 뉴스 ===== -->
+    <section id="newsSection">
+      <div class="section-header">
+        <span class="icon">📰</span>
+        <h2>실시간 재난 뉴스</h2>
+        <span class="badge-live">LIVE</span>
+      </div>
+      <div class="news-list" id="newsList">
+        <div class="news-loading">뉴스를 불러오는 중...</div>
+      </div>
+    </section>
+
+    <!-- ===== Should 1: 재해 대처 방법 ===== -->
+    <section id="guideSection">
+      <div class="section-header">
+        <span class="icon">🛡️</span>
+        <h2>재해 발생 시 대처 방법</h2>
+      </div>
+      <div class="guide-list" id="guideList"></div>
+    </section>
+
+  </main>
+
+  <!-- 푸터 -->
+  <footer>
+    <p><strong>대피모아</strong> — 재해 발생 시 신속하고 안전하게 대피할 수 있도록 돕습니다.</p>
+    <p>데이터 출처: 행정안전부 대피소 정보 · 기상청 기상특보 · Google News</p>
+    <p>© 2026 대피모아. All rights reserved.</p>
+  </footer>
+
+  <!-- 스크립트 -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="js/shelters.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
