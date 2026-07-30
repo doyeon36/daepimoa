@@ -487,10 +487,16 @@
     var apiUrl = "https://api.rss2json.com/v1/api.json?rss_url=" + encodeURIComponent(rssUrl);
 
     fetch(apiUrl)
-      .then(function(res) { return res.json(); })
+      .then(function(res) {
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.json();
+      })
       .then(function(data) {
-        if (data.status !== "ok" || !data.items) { callback(null); return; }
-        callback(data.items);
+        if (data.status === "ok" && data.items && data.items.length > 0) {
+          callback(data.items);
+        } else {
+          callback(null);
+        }
       })
       .catch(function(err) {
         console.warn("rss2json 로드 실패:", err);
@@ -499,9 +505,10 @@
   }
 
   function parseNewsRss(keywordList, callback) {
-    var queryTerms = keywordList.map(function(k) { return k.keywords[0]; }).join(" OR ");
+    // 검색어 축소 (URL 길이 제한으로 인한 500 에러 방지)
+    var searchTerms = keywordList.slice(0, 6).map(function(k) { return k.keywords[0]; }).join(" OR ");
 
-    fetchGoogleNews(queryTerms, function(items) {
+    fetchGoogleNews(searchTerms, function(items) {
         if (!items) { callback(null); return; }
 
         var results = {};
