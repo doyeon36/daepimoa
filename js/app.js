@@ -481,15 +481,34 @@
     return null;
   }
 
+  var CORS_PROXIES = [
+    function(url) { return "https://api.allorigins.win/raw?url=" + encodeURIComponent(url); },
+    function(url) { return "https://corsproxy.io/?url=" + encodeURIComponent(url); },
+    function(url) { return "https://api.codetabs.com/v1/proxy/?quest=" + url; }
+  ];
+
+  function fetchWithProxies(url, index, onSuccess, onError) {
+    if (index >= CORS_PROXIES.length) { onError(); return; }
+    fetch(CORS_PROXIES[index](url))
+      .then(function(res) { return res.text(); })
+      .then(function(text) {
+        if (text && text.length > 50) {
+          onSuccess(text);
+        } else {
+          fetchWithProxies(url, index + 1, onSuccess, onError);
+        }
+      })
+      .catch(function() {
+        fetchWithProxies(url, index + 1, onSuccess, onError);
+      });
+  }
+
   function parseNewsRss(keywordList, callback) {
     var queryTerms = keywordList.map(function(k) { return k.keywords[0]; }).join(" OR ");
     var rssUrl = "https://news.google.com/rss/search?q=" +
       encodeURIComponent(queryTerms) + "&hl=ko&gl=KR&ceid=KR:ko";
-    var proxyUrl = "https://api.allorigins.win/raw?url=" + encodeURIComponent(rssUrl);
 
-    fetch(proxyUrl)
-      .then(function(res) { return res.text(); })
-      .then(function(xmlText) {
+    fetchWithProxies(rssUrl, 0, function(xmlText) {
         var parser = new DOMParser();
         var xml = parser.parseFromString(xmlText, "text/xml");
         var items = xml.querySelectorAll("item");
@@ -505,7 +524,6 @@
           var source = items[i].querySelector("source") ? items[i].querySelector("source").textContent : "뉴스";
           var cleanTitle = title.replace(/ - [^-]+$/, "");
 
-          // 재난특보: 24시간 이내, 사고특보: 3시간 이내 뉴스만 표시
           var newsDate = new Date(pubDate);
           if (isNaN(newsDate.getTime()) || (now - newsDate) > TIME_LIMIT) continue;
 
@@ -526,9 +544,9 @@
           }
         }
         callback(results);
-      })
-      .catch(function(err) {
-        console.warn("뉴스 데이터 로드 실패:", err);
+      },
+      function() {
+        console.warn("모든 CORS 프록시 실패");
         callback(null);
       });
   }
@@ -622,8 +640,22 @@
         }
       }
 
+      // 시/군/구명 매칭 → 해당 시/도 검색
+      var districtRegions = Object.keys(REGION_DISTRICTS);
+      for (var i = 0; i < districtRegions.length; i++) {
+        var dRegion = districtRegions[i];
+        var districts = REGION_DISTRICTS[dRegion] || [];
+        for (var j = 0; j < districts.length; j++) {
+          var d = districts[j].toLowerCase();
+          if (d.indexOf(q) >= 0 || q.indexOf(d) >= 0) {
+            if (matched.indexOf(dRegion) < 0) matched.push(dRegion);
+            break;
+          }
+        }
+      }
+
       if (matched.length === 0) {
-        list.innerHTML = '<div class="situation-empty">🔍 검색 결과가 없습니다.<br>예: 서울, 부산, 광주, 경기도</div>';
+        list.innerHTML = '<div class="situation-empty">🔍 검색 결과가 없습니다.<br>예: 서울, 부산, 광주, 보성, 영월, 경기도</div>';
         return;
       }
 
@@ -730,15 +762,7 @@
       encodeURIComponent("재난 OR 재해 OR 대피 OR 지진 OR 태풍 OR 화재 OR 홍수 OR 폭우 OR 기상특보") +
       "&hl=ko&gl=KR&ceid=KR:ko";
 
-    // CORS 우회를 위한 프록시 (allorigins)
-    var proxyUrl = "https://api.allorigins.win/raw?url=" + encodeURIComponent(rssUrl);
-
-    fetch(proxyUrl)
-      .then(function (res) {
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        return res.text();
-      })
-      .then(function (xmlText) {
+    fetchWithProxies(rssUrl, 0, function(xmlText) {
         var parser = new DOMParser();
         var xml = parser.parseFromString(xmlText, "text/xml");
         var items = xml.querySelectorAll("item");
@@ -764,15 +788,14 @@
           });
         }
 
-        // 최신순 정렬 (가장 나중에 작성된 뉴스가 위로)
         newsItems.sort(function (a, b) {
           return b.dateObj - a.dateObj;
         });
 
         renderNews(newsItems);
-      })
-      .catch(function (err) {
-        console.warn("뉴스 로드 실패:", err);
+      },
+      function() {
+        console.warn("뉴스 로드 실패: 모든 CORS 프록시 실패");
         renderNewsFallback();
       });
   }
