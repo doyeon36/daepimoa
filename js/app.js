@@ -495,7 +495,8 @@
         var items = xml.querySelectorAll("item");
         var results = {};
         var now = new Date();
-        var THREE_HOURS = 3 * 60 * 60 * 1000;
+        var isWeather = keywordList === WEATHER_KEYWORDS;
+        var TIME_LIMIT = (isWeather ? 24 : 3) * 60 * 60 * 1000;
 
         for (var i = 0; i < items.length; i++) {
           var title = items[i].querySelector("title") ? items[i].querySelector("title").textContent : "";
@@ -504,9 +505,9 @@
           var source = items[i].querySelector("source") ? items[i].querySelector("source").textContent : "뉴스";
           var cleanTitle = title.replace(/ - [^-]+$/, "");
 
-          // 3시간 이내 뉴스만 표시
+          // 재난특보: 24시간 이내, 사고특보: 3시간 이내 뉴스만 표시
           var newsDate = new Date(pubDate);
-          if (isNaN(newsDate.getTime()) || (now - newsDate) > THREE_HOURS) continue;
+          if (isNaN(newsDate.getTime()) || (now - newsDate) > TIME_LIMIT) continue;
 
           var region = detectRegionFromText(cleanTitle);
           var incident = detectIncidentType(cleanTitle, keywordList);
